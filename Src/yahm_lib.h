@@ -25,8 +25,25 @@
 // High level API: consider current app as hack. All resources should be similar to hack resources.
 Err YAHM_InstallHack(void);
 Err YAHM_UninstallHack(void);
+
 ////////////////////////////////////////////////////////////////////////////////
 // Middle level API: activate each trap independently
+typedef struct YAHM_SyscallInfo5{
+	UInt32 baseTableOffset;
+	UInt32 offset;
+	/*
+		flags:
+		0 - thumb
+		3-1 - thunk type (0 - common, 1 - fastest, 2 -CW9
+	*/
+	UInt32 flags;
+}YAHM_SyscallInfo5;
+
+enum {
+	THUNK_COMMON = 0,
+	THUNK_FAST,
+	THUNK_CW
+};
 
 // execute 'armc' #999 (hack initialization)
 Err YAHM_ExecuteInitialization(void *initCodeResource, Boolean init);
@@ -34,20 +51,19 @@ Err YAHM_ExecuteInitialization(void *initCodeResource, Boolean init);
 // creator and resId are used for feature set.
 Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId);
 void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID);
+
+Err YAHM_InstallTrapFromMemory(void *pTrapCode, YAHM_SyscallInfo5 *pTrapInfo, void *pPnoletStart, UInt32 creator, UInt16 resId);
+void YAHM_UninstallTrapFromMemory(void *pTrapCode, UInt32 creator, UInt16 resID);
+
+Err YAHM_InstallTraps(UInt32 trapCount, void **pTrapCodes, YAHM_SyscallInfo5 * pTrapInfos, void *pPnoletStart);
+Err YAHM_UninstallTraps(UInt32 trapCount, void **pTrapCodes);
+
+
 void *YAHM_FixupGccCode(MemHandle hGot, void *codeResource, UInt32 *pGotPtr);
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // low level API: hand-made traps. no tracking for this traps at all
-typedef struct YAHM_SyscallInfo5{
-	UInt32 baseTableOffset;
-	UInt32 offset;
-	/*
-		flags:
-		0 - thumb
-		3-1 - thumb type (0 - common, 1 - fastest...
-	*/
-	UInt32 flags;
-}YAHM_SyscallInfo5;
-
 // return current address
 void *YAHM_GetTrapAddress(UInt32 base, UInt32 offset);
 // blindly set trap address

@@ -95,6 +95,36 @@ Err YAHM_InstallHack(void){
 	PrvProtectApp(true);
 	return errNone;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+Err YAHM_InstallTraps(UInt32 trapCount, void **pTrapCodes, YAHM_SyscallInfo5 * pTrapInfos, void *pPnoletStart){
+	UInt16 cardNo;
+	LocalID lid;
+	UInt32 crid;
+	UInt32 i;
+	
+	if (trapCount == 0){
+		return hackErrNoHackResources;
+	}
+	if (SysCurAppDatabase(&cardNo, &lid) != errNone){
+		return hackErrNoActiveApp;
+	}
+	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
+	for(i = 0; i < trapCount ; ++i){
+		Err err;
+		err = YAHM_InstallTrapFromMemory(pTrapCodes[i], &pTrapInfos[i], pPnoletStart, crid, i + HACK_CODE_RESOURCE_START);
+		if (err != errNone){
+			UInt32 j;
+			for(j = 0; j < i; ++j){
+				YAHM_UninstallTrap(pTrapCodes[j], crid, j + HACK_CODE_RESOURCE_START);
+			}
+			return err;
+		}
+	}
+	PrvProtectApp(true);
+	return errNone;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 Err YAHM_UninstallHack(void){
 	MemHandle hCode;
@@ -121,6 +151,26 @@ Err YAHM_UninstallHack(void){
 		YAHM_ExecuteInitialization(pfn, false);
 		MemHandleUnlock(hCode);
 		DmReleaseResource(hCode);
+	}
+	PrvProtectApp(false);
+	return errNone;
+}
+////////////////////////////////////////////////////////////////////////////////
+Err YAHM_UninstallTraps(UInt32 trapCount, void **pTrapCodes){
+	UInt16 cardNo;
+	LocalID lid;
+	UInt32 crid;
+	UInt32 i;
+
+	if (trapCount == 0){
+		return hackErrNoHackResources;
+	}
+	if (SysCurAppDatabase(&cardNo, &lid) != errNone){
+		return hackErrNoActiveApp;
+	}
+	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
+	for(i = 0; i < trapCount; ++i){
+		YAHM_UninstallTrapFromMemory(pTrapCodes[i], crid, i + HACK_CODE_RESOURCE_START);
 	}
 	PrvProtectApp(false);
 	return errNone;

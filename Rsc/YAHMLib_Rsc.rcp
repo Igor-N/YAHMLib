@@ -6,7 +6,7 @@
 
 GENERATEHEADER "YAHMLib_Rsc.h"
 RESETAUTOID 1000
-
+#include "yahm_int.h"
 MENU ID MainMenuBar
 BEGIN
     PULLDOWN "Edit"
@@ -20,8 +20,10 @@ BEGIN
 		MENUITEM "Keyboard" ID 10006 "K"
 		MENUITEM "Graffiti Help" ID 10007 "G"
     END
-
-
+    PULLDOWN "Test"
+    BEGIN
+    	MENUITEM "Alert" ID ALERT_MENU
+    END
 END	
 
 MENU ID EditOnlyMenuBar
@@ -84,15 +86,20 @@ BEGIN
     BITMAP "icon-sm-8-d144.bmp" BPP 8 TRANSPARENTINDEX 210 COMPRESS DENSITY 2 
 END
 
-DATA "armc" ID 9998 "armc270E.bin"
-DATA "armc" ID 9999 "armc270F.bin"
+DATA "armc" ID YAHM_INIT_RES_ID "armc270E.bin"
+DATA "armc" ID YAHM_SET_TRAP_RES_ID "armc270F.bin"
 
-DATA "armc" ID 9900 "fatthunk.bin"
-DATA "armc" ID 9901 "SHORT.BIN"
-DATA "armc" ID 9902 "shorttoold.bin"
+DATA "armc" ID YAHM_FAT_THUNK_RES_ID "fatthunk.bin"
+DATA "armc" ID YAHM_SHORT_RES_ID "SHORT.BIN"
+DATA "armc" ID  YAHM_SHORT_OLD_RES_ID "shorttoold.bin"
+DATA "armc" ID  YAHM_CW_THUNK_RES_ID "cwthunk.bin"
 
+HEX "TRA5" ID 1000 
+	00 00 00 12 
+	00 00 02 04
+	00 00 00 04
 
-
+/*
 DATA "TRA5" ID 0x03e8 "TRA503e8.bin"
 DATA "armc" ID 0x03e8 "armc03e8.bin"
 
@@ -102,7 +109,7 @@ DATA ".got" ID 0x03e9 ".got03e9.bin"
 
 DATA "aalt" ID 0x07d0 "aalt07d0.bin"
 DATA "Talt" ID 0x07d0 "Talt07d0.bin"
-
+*/
 
 
 
@@ -110,7 +117,7 @@ ALERT ID DebugAlert
 ERROR
 BEGIN
     TITLE "YAHM"
-    MESSAGE "^1^2^3"
+    MESSAGE "-^1-^2-^3-"
     BUTTONS "OK"
 END
 
@@ -122,5 +129,3 @@ BEGIN
     MESSAGE "hoho"
     BUTTONS "OK"
 END
-
-

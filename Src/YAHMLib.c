@@ -12,7 +12,7 @@
  
 #include <PalmOS.h>
 #include <PalmOSGlue.h>
-
+#include <PceNativeCall.h>
 #include "YAHMLib.h"
 #include "YAHMLib_Rsc.h"
 #include "yahm_lib.h"
@@ -112,7 +112,8 @@ static Boolean MainFormDoCommand(UInt16 command)
 
 	switch (command)
 	{
-
+		case ALERT_MENU:
+			FrmCustomAlert(DebugAlert, "foo", "bar", "boz");
 	}
 
 	return handled;
@@ -175,10 +176,41 @@ static Boolean MainFormHandleEvent(EventType * eventP)
 				break;
 			}else if (eventP->data.ctlSelect.controlID == MainEnableButton)
 			{
-				YAHM_InstallHack();
+				YAHM_SyscallInfo5 si[2];
+				MemHandle h;
+				void *p;
+				void *pp;
+				pp = MemPtrNew(sizeof(void *) * 2);
+				si[0].baseTableOffset = 12;
+				si[0].offset = 0x204;
+				si[0].flags = THUNK_CW << 1;
+				
+				si[1].baseTableOffset = 8;
+				si[1].offset = 0x824;
+				si[1].flags = THUNK_CW << 1;
+				h = DmGet1Resource('armc', 1000);
+				p = MemHandleLock(h);
+				PceNativeCall(p, pp);
+				DmReleaseResource(h);
+				YAHM_InstallTraps(2, pp, si, p);
+				MemPtrFree(pp);
+				//YAHM_InstallHack();
 			}else if (eventP->data.ctlSelect.controlID == MainDisableButton)
 			{
-				YAHM_UninstallHack();
+				MemHandle h;
+				void *p;
+				void *pp;
+				pp = MemPtrNew(sizeof(void *) * 2);
+
+				h = DmGet1Resource('armc', 1000);
+				p = MemHandleLock(h);
+				PceNativeCall(p, pp);
+				DmReleaseResource(h);
+				MemHandleUnlock(h);
+				MemHandleUnlock(h);
+				YAHM_UninstallTraps(2, pp);
+				MemPtrFree(pp);
+				//YAHM_UninstallHack();
 			}
 
 			break;

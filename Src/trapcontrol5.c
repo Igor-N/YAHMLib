@@ -2,6 +2,7 @@
 #include <PceNativeCall.h>
 #include "endianutils.h"
 #include "yahm_lib.h"
+#define NOT_PILRC
 #include "yahm_int.h"
 #include "YAHMLib_Rsc.h"
 
@@ -121,6 +122,7 @@ static Err PrvCopyThunk(void *buf, UInt16 id){
 	}
 	p = MemHandleLock(h);
 	MemMove(buf, p, MemHandleSize(h));
+	MemHandleUnlock(h);
 	DmReleaseResource(h);
 	return errNone;
 }
@@ -145,7 +147,7 @@ void *YAHM_GetTrapAddress(UInt32 base, UInt32 offset){
 	return res;
 }
 ////////////////////////////////////////////////////////////////////////////////
-static void *YAHM_SetTrapAddress(UInt32 base, UInt32 offset, void *addr){
+void *YAHM_SetTrapAddress(UInt32 base, UInt32 offset, void *addr){
 	DECLARE_STRUCT_WITH_ARM_ALIGN(ArmParameterBlock, pSyscallInfo)
 	MemHandle h;
 	void *p;
@@ -361,16 +363,72 @@ void *YAHM_FixupGccCode(MemHandle hGot, void *codeInResource, UInt32 *pGotPtr){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId){
+static Err InstallTrap(void *pTrapCode, YAHM_SyscallInfo5 *pTrapInfo, UInt32 creator, UInt16 resId, void *gotPtr){
 	JumpThunkOS5 *pThunkDb;
 	ThunkStateOS5 ts;
-	UInt32 gotPtr = 0;
 
+	UInt32 prevAddress, addr;
+	UInt16 commonJump, thunkId;
+	UInt32 **pStack;
+	Err err;
+	UInt32 gotValue;
+
+	prevAddress = (UInt32)YAHM_GetTrapAddress(pTrapInfo->baseTableOffset, pTrapInfo->offset);
+	ClearState(&ts);
+	commonJump = (pTrapInfo->flags >> 1) & 7;
+
+	pThunkDb = PrvGetFreeThunk(&ts.pPool);
+	if (pThunkDb == NULL){
+		return hackErrNoFreeThunk;
+	}
+	// oldest points to prevAddress
+	err = PrvCopyThunk(&pThunkDb->oldJumpIns, YAHM_SHORT_OLD_RES_ID);
+	if (err != errNone){
+		return err; 
+	}
+	pThunkDb->oldestAddress = ByteSwap32((prevAddress));
+	// earliest points to our handler
+	switch(commonJump){
+	default:
+	case THUNK_COMMON:
+		gotValue = ByteSwap32(((UInt32)gotPtr));
+		thunkId = YAHM_FAT_THUNK_RES_ID;
+		break;
+	case THUNK_FAST:
+		gotValue = 0;
+		thunkId = YAHM_SHORT_RES_ID;
+		break;
+	case THUNK_CW:
+		gotValue = ByteSwap32(((UInt32)gotPtr));
+		thunkId = YAHM_CW_THUNK_RES_ID;
+		break;
+	}
+	
+	err = PrvCopyThunk(&pThunkDb->hackJumpIns, thunkId);
+	if (err != errNone){
+		return err;
+	}
+	addr = (UInt32)pTrapCode;
+	if (pTrapInfo->flags & 1){
+		addr |= 1;
+	}
+	addr = ByteSwap32(addr);
+	pThunkDb->hackCodeAddress = addr;
+	pThunkDb->syscallInfo = *pTrapInfo;
+	pThunkDb->R10_GOT = gotValue;
+	pStack = &ts.pPool->saveStackPtr;
+	pThunkDb->stackPtr = ByteSwap32(((UInt32)pStack));
+	FtrSet(creator, resId, (UInt32)(&pThunkDb->oldJumpIns));
+
+	YAHM_SetTrapAddress(pTrapInfo->baseTableOffset, pTrapInfo->offset, (void *)&pThunkDb->hackJumpIns);
+	PrvSqueezeThunks(&ts);
+	return errNone;
+}
+////////////////////////////////////////////////////////////////////////////////
+Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId){
+	UInt32 gotPtr = 0;
 	void *pHackCode;
 	void *pFixedHackCode;
-	UInt32 prevAddress, addr;
-	Boolean commonJump;
-	UInt32 **pStack;
 	Err err;
 	YAHM_SyscallInfo5 ci;
 
@@ -380,61 +438,29 @@ Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, U
 	}
 	pHackCode = MemHandleLock(hTrapCode);
 
-	prevAddress = (UInt32)YAHM_GetTrapAddress(ci.baseTableOffset, ci.offset);
-	ClearState(&ts);
-	commonJump = (ci.flags >> 1) & 7;
-
-	pThunkDb = PrvGetFreeThunk(&ts.pPool);
-	if (pThunkDb == NULL){
-		return hackErrNoFreeThunk;
-	}
 	pFixedHackCode = YAHM_FixupGccCode(hGot, pHackCode, &gotPtr);
 	if (pFixedHackCode != pHackCode){
+		// unlock hack resource
 		MemPtrUnlock(pHackCode);
-		commonJump = 0;
+		ci.flags &= ~0xE; // make thunk#0
 	}
-	// oldest points to prevAddress
-	err = PrvCopyThunk(&pThunkDb->oldJumpIns, YAHM_SHORT_OLD_RES_ID);
-	if (err != errNone){
-		return err; 
-	}
-	//pThunkDb->oldJumpIns = toold;
-	pThunkDb->oldestAddress = ByteSwap32((prevAddress));
-	// earliest points to our handler
-	//
-	//pThunkDb->hackJumpIns = (commonJump == 1) ? togoodhack : tohack;
-	err = PrvCopyThunk(&pThunkDb->hackJumpIns, (commonJump == 1) ? YAHM_SHORT_RES_ID : YAHM_FAT_THUNK_RES_ID );
-	if (err != errNone){
-		return err;
-	}
-	addr = (UInt32)pFixedHackCode;
-	if (ci.flags & 1){
-		addr |= 1;
-	}
-	addr = ByteSwap32(addr);
-	pThunkDb->hackCodeAddress = addr;
-	pThunkDb->syscallInfo = ci;
-	pThunkDb->R10_GOT = ByteSwap32(gotPtr);
-	pStack = &ts.pPool->saveStackPtr;
-	pThunkDb->stackPtr = ByteSwap32(((UInt32)pStack));
-	FtrSet(creator, resId, (UInt32)(&pThunkDb->oldJumpIns));
-
-	YAHM_SetTrapAddress(ci.baseTableOffset, ci.offset, (void *)&pThunkDb->hackJumpIns);
-	PrvSqueezeThunks(&ts);
-	return errNone;
+	return InstallTrap(pFixedHackCode, &ci, creator, resId, (void *)gotPtr);
+}
+////////////////////////////////////////////////////////////////////////////////
+Err YAHM_InstallTrapFromMemory(void *pTrapCode, YAHM_SyscallInfo5 *pTrapInfo, void *pPnoletStart, UInt32 creator, UInt16 resId){
+	return InstallTrap(pTrapCode, pTrapInfo, creator, resId, pPnoletStart);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// assumes initialization in proper order: no check for hcode for trapNo
-void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
+static void UninstallTrap(UInt32 creator, UInt16 resID, void **ppTrapCode){
 	UInt32 prevAddress;
 	JumpThunkOS5 *pThunkDb;
 	void *hackAddress;
 	char buff[80];
 	UInt32 addr;
 	YAHM_SyscallInfo5 ci;
-	
 	ThunkStateOS5 ts;
+	
 	ClearState(&ts);
 	// find creator/resID record block
 	FtrGet(creator, resID, &prevAddress);
@@ -448,7 +474,7 @@ void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
 	hackAddress = (void *)(addr);
 	pThunkDb->hackCodeAddress = ByteSwap32(((UInt32)&pThunkDb->oldJumpIns));
 
-	// if we was the latest catcher, clear dummy thunk
+	// if we were the latest catcher, clear dummy thunk
 	if (((UInt32)YAHM_GetTrapAddress(ci.baseTableOffset, ci.offset) == (UInt32)&pThunkDb->hackJumpIns)){
 		YAHM_SetTrapAddress(ci.baseTableOffset, ci.offset, (void *)(ByteSwap32(pThunkDb->oldestAddress)));
 		FreeThunk(pThunkDb);
@@ -467,12 +493,29 @@ void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
 		}
 	}
 	PrvSqueezeThunks(&ts);
+	FtrUnregister(creator, resID);
+	if (ppTrapCode != NULL){
+		*ppTrapCode = hackAddress;
+	}
+}
+////////////////////////////////////////////////////////////////////////////////
+// assumes initialization in proper order: no check for hcode for trapNo
+void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
+	void *hackAddress;
+	UninstallTrap(creator, resID, &hackAddress);
 	if (MemPtrDataStorage(hackAddress)){
+		// unlock hack resource
 		MemHandleUnlock(hCode);
 	}else{
+		// free memory chunk
 		MemPtrFree(hackAddress);
 	}
-	FtrUnregister(creator, resID);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// assumes initialization in proper order: no check for hcode for trapNo
+void YAHM_UninstallTrapFromMemory(void *pTrapCode, UInt32 creator, UInt16 resID){
+	UninstallTrap(creator, resID, NULL);
 }
 
 #ifdef __MWERKS__
