@@ -86,6 +86,13 @@ END
 
 DATA "armc" ID 9998 "armc270E.bin"
 DATA "armc" ID 9999 "armc270F.bin"
+
+DATA "armc" ID 9900 "fatthunk.bin"
+DATA "armc" ID 9901 "SHORT.BIN"
+DATA "armc" ID 9902 "shorttoold.bin"
+
+
+
 DATA "TRA5" ID 0x03e8 "TRA503e8.bin"
 DATA "armc" ID 0x03e8 "armc03e8.bin"
 

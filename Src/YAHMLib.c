@@ -428,5 +428,3 @@ void YAHM_warnAboutIncompatibleUpdate(void)
 {
 }
 
-void YAHM_warnAboutFullThunk(void){
-}

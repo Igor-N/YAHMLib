@@ -1,5 +1,8 @@
 #include <palmos.h>
 #include "yahm_lib.h"
+#include "yahm_int.h"
+#include "YAHMLib_Rsc.h"
+
 
 ////////////////////////////////////////////////////////////////////////////////
 static void PrvProtectApp(Boolean protect);
@@ -31,25 +34,25 @@ static void PrvProtectApp(Boolean protect){
 	}
 }
 ////////////////////////////////////////////////////////////////////////////////
-Boolean YAHM_InstallHack(void){
+Err YAHM_InstallHack(void){
 	UInt16 cardNo;
 	LocalID lid;
 	UInt16 resNo;
 	MemHandle hCode;
 	UInt32 crid;
 	if (SysCurAppDatabase(&cardNo, &lid) != errNone){
-		return false;
+		return hackErrNoActiveApp;
 	}
 
 	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
-
 	// install resource execution
 	hCode = DmGet1Resource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
 	if (hCode != NULL){
 		void *pfn =  MemHandleLock(hCode);
-		if (!YAHM_ExecuteInitialization(pfn, true)){
+		Err err = YAHM_ExecuteInitialization(pfn, true);
+		if (err != errNone){
 			MemHandleUnlock(hCode);
-			return false;
+			return err;
 		}
 		MemHandleUnlock(hCode);
 		DmReleaseResource(hCode);
@@ -59,8 +62,10 @@ Boolean YAHM_InstallHack(void){
 	for(resNo = HACK_CODE_RESOURCE_START; (hCode = DmGet1Resource(HACK_ARM_RES_TYPE, resNo)) ; resNo++){
 		MemHandle hGot = DmGet1Resource(HACK_GOT_RES_TYPE, resNo);
 		MemHandle hTrapInfo = DmGet1Resource(TRAP_RESOURCE_TYPE5, resNo);
+		Err err;
+		err = YAHM_InstallTrap(hCode, hGot, hTrapInfo, crid, resNo);
 		
-		if (!YAHM_InstallTrap(hCode, hGot, hTrapInfo, crid, resNo)){
+		if (err != errNone){
 			UInt16 resNo1;
 			if (hGot != NULL){
 				DmReleaseResource(hGot);
@@ -74,7 +79,7 @@ Boolean YAHM_InstallHack(void){
 				YAHM_UninstallTrap(hCode, crid, resNo1);
 				DmReleaseResource(hCode);
 			}
-			return false;
+			return err;
 		}
 		if (hGot != NULL){
 			DmReleaseResource(hGot);
@@ -85,13 +90,13 @@ Boolean YAHM_InstallHack(void){
 		DmReleaseResource(hCode);
 	}
 	if (resNo == HACK_CODE_RESOURCE_START){
-		return false;
+		return hackErrNoHackResources;
 	}
 	PrvProtectApp(true);
-	return true;
+	return errNone;
 }
 ////////////////////////////////////////////////////////////////////////////////
-Boolean YAHM_UninstallHack(void){
+Err YAHM_UninstallHack(void){
 	MemHandle hCode;
 	UInt16 resID;
 	UInt16 cardNo;
@@ -99,7 +104,7 @@ Boolean YAHM_UninstallHack(void){
 	UInt32 crid;
 
 	if (SysCurAppDatabase(&cardNo, &lid) != errNone){
-		return false;
+		return hackErrNoActiveApp;
 	}
 
 	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
@@ -118,7 +123,7 @@ Boolean YAHM_UninstallHack(void){
 		DmReleaseResource(hCode);
 	}
 	PrvProtectApp(false);
-	return true;
+	return errNone;
 }
 #ifdef __MWERKS__
 #pragma warn_a5_access off

@@ -1,0 +1,22 @@
+arm-palmos-gcc -Wall -O1 -nostartfiles settrap.c -o settrap cache.s libarmboot.a 
+m68k-palmos-obj-res -l settrap
+rm armc270F.bin
+mv GLib0000.settrap.grc armc270F.bin
+
+arm-palmos-gcc -Wall  -O1 -nostartfiles callinit.s -o callinit cache.s
+m68k-palmos-obj-res -l callinit
+rm armc270E.bin
+mv GLib0000.callinit.grc armc270E.bin
+
+arm-palmos-gcc -nostartfiles -O2 gets3.s -o gets31
+m68k-palmos-obj-res -l gets31
+mv GLib0000.gets31.grc shorttoold.bin
+
+
+arm-palmos-gcc -nostartfiles -O2 gets5.s -o gets5
+m68k-palmos-obj-res -l gets5
+mv GLib0000.gets5.grc fatthunk.bin
+
+arm-palmos-gcc -nostartfiles -O2 gets4.s -o gets4
+m68k-palmos-obj-res -l gets4
+mv GLib0000.gets4.grc short.bin

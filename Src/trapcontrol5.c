@@ -2,6 +2,7 @@
 #include <PceNativeCall.h>
 #include "endianutils.h"
 #include "yahm_lib.h"
+#include "yahm_int.h"
 #include "YAHMLib_Rsc.h"
 
 #define POOL_VERSION 5
@@ -20,7 +21,7 @@ typedef struct{
 typedef struct{
 	UInt8 op[4];
 }ShortJumpRoutine;
-
+/*
 const ShortJumpRoutine toold = {
 { // size = 4
 0x04, 0xf0, 0x1f, 0xe5 
@@ -30,14 +31,14 @@ const ShortJumpRoutine toold = {
 const JumpRoutine togoodhack = {
 #include "thunk/short_hack.c"
 };
-
-
+*/
+/*
 
 const JumpRoutine tohack = {
 #include "thunk/fatjumphack.c"
 };
 
-
+*/
 typedef struct{
 	// порядок не менять!
 	// код перехода на наш хак
@@ -106,66 +107,75 @@ static void InitThunks(void);
 #if 0
 static void DestroyThunks(void);
 #endif
-static JumpThunkOS5 *PrvGetFreeThunk(ThunkStateOS5 *pts);
-static JumpThunkOS5 *FindThunkByPrevAddress(ThunkStateOS5 *pts, void *prevAddress, Boolean isPrev);
-static void SqueezeThunks(ThunkStateOS5 *pts);
-static Boolean PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo);
+static JumpThunkOS5 *PrvGetFreeThunk(ThunkPoolOS5 **pts);
+static JumpThunkOS5 *PrvFindThunkByPrevAddress(ThunkPoolOS5 **ppts, void *prevAddress, Boolean isPrev);
+static void PrvSqueezeThunks(ThunkStateOS5 *pts);
+static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo);
 
 ////////////////////////////////////////////////////////////////////////////////
-static UInt32 SysGetTrapAddress1(ArmParameterBlock *pTrapInfo){
-	MemHandle h;
+static Err PrvCopyThunk(void *buf, UInt16 id){
+	MemHandle h = DmGet1Resource(HACK_ARM_RES_TYPE, id);
 	void *p;
-	UInt32 res;
-
-	pTrapInfo->set = 0;	
-	h = DmGetResource(HACK_ARM_RES_TYPE, YAHM_SET_TRAP_RES_ID);
+	if (h == 0){
+		return hackErrNoLibraryArmlet;
+	}
 	p = MemHandleLock(h);
-	res = PceNativeCall((NativeFuncType *)p, pTrapInfo);
-	MemHandleUnlock(h);
+	MemMove(buf, p, MemHandleSize(h));
 	DmReleaseResource(h);
-	return res;
+	return errNone;
 }
 ////////////////////////////////////////////////////////////////////////////////
 void *YAHM_GetTrapAddress(UInt32 base, UInt32 offset){
-	UInt32 res;
-	ArmParameterBlock *pTrapInfo = MemPtrNew(sizeof(ArmParameterBlock));
-	pTrapInfo->callInfo.baseTableOffset = base;
-	pTrapInfo->callInfo.offset = offset;
-	res = SysGetTrapAddress1(pTrapInfo);
-	MemPtrFree(pTrapInfo);
-	return (void *)res;
-}
-////////////////////////////////////////////////////////////////////////////////
-static UInt32 SysSetTrapAddress1(ArmParameterBlock * pTrapInfo, UInt32 addr){
+	DECLARE_STRUCT_WITH_ARM_ALIGN(ArmParameterBlock, pSyscallInfo)
 	MemHandle h;
 	void *p;
-	UInt32 res;
+	void *res;
 
-	pTrapInfo->set = 1;
-	pTrapInfo->newAddr = ByteSwap32(addr);
 	h = DmGetResource(HACK_ARM_RES_TYPE, YAHM_SET_TRAP_RES_ID);
+	if (h == NULL){
+		return 0; //hackErrNoLibraryArmlet;
+	}
 	p = MemHandleLock(h);
-	res = PceNativeCall((NativeFuncType *)p, pTrapInfo);
+	pSyscallInfo->callInfo.baseTableOffset = base;
+	pSyscallInfo->callInfo.offset = offset;
+	pSyscallInfo->set = 0;
+	res = (void *)PceNativeCall((NativeFuncType *)p, pSyscallInfo);
+	MemHandleUnlock(h);
+	DmReleaseResource(h);
+	return res;
+}
+////////////////////////////////////////////////////////////////////////////////
+static void *YAHM_SetTrapAddress(UInt32 base, UInt32 offset, void *addr){
+	DECLARE_STRUCT_WITH_ARM_ALIGN(ArmParameterBlock, pSyscallInfo)
+	MemHandle h;
+	void *p;
+	void *res;
+
+	pSyscallInfo->callInfo.baseTableOffset = base;
+	pSyscallInfo->callInfo.offset = offset;
+	pSyscallInfo->set = 1;
+	pSyscallInfo->newAddr = ByteSwap32(((UInt32)addr));
+	h = DmGetResource(HACK_ARM_RES_TYPE, YAHM_SET_TRAP_RES_ID);
+	if (h == NULL){
+		return 0; //hackErrNoLibraryArmlet;
+	}
+	p = MemHandleLock(h);
+	res = (void *)PceNativeCall((NativeFuncType *)p, pSyscallInfo);
+//FrmCustomAlert(DebugAlert, "b", "", "");	
 	MemHandleUnlock(h);
 	DmReleaseResource(h);
 	return res;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void *YAHM_SetTrapAddress(YAHM_SyscallInfo5 *pTrapInfo, void *trapHandler){
-	ArmParameterBlock *pSetTrapInfo = MemPtrNew(sizeof(ArmParameterBlock));
-	pSetTrapInfo->callInfo = *pTrapInfo;
-	return (void *)SysSetTrapAddress1(pSetTrapInfo, (UInt32)trapHandler);
-}
-////////////////////////////////////////////////////////////////////////////////
-static Boolean PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo){
+static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo){
 	if ((hTrapInfo == NULL) || (MemHandleSize(hTrapInfo) < sizeof(YAHM_SyscallInfo5))){
 		MemSet(pTrapInfo, sizeof(YAHM_SyscallInfo5), 0);
-		return false;
+		return hackErrWrongTrapInfo;
 	}
 	*pTrapInfo = *(YAHM_SyscallInfo5 *)MemHandleLock(hTrapInfo);
 	MemHandleUnlock(hTrapInfo);	
-	return true;
+	return errNone;
 }
 ////////////////////////////////////////////////////////////////////////////////
 static inline Boolean IS_FREE_THUNK(JumpThunkOS5 *pThunk){
@@ -219,21 +229,21 @@ static void PrvCheckPoolVersion(ThunkPoolOS5 *pPool){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-JumpThunkOS5 *PrvGetFreeThunk(ThunkStateOS5 *pts){ //TODO: examine treshold
+JumpThunkOS5 *PrvGetFreeThunk(ThunkPoolOS5 **ppts){ //TODO: examine treshold
 	int i;
-	if (pts->pPool == NULL){
-		pts->pPool = YAHM_GetRuntimeSettingsPtr()->pPool;
-		if (pts->pPool == NULL){
+	if (*ppts == NULL){
+		*ppts = YAHM_GetRuntimeSettingsPtr()->pPool;
+		if (*ppts == NULL){
 			InitThunks();
-			pts->pPool = YAHM_GetRuntimeSettingsPtr()->pPool;
+			*ppts = YAHM_GetRuntimeSettingsPtr()->pPool;
 		}
-		PrvCheckPoolVersion(pts->pPool);
+		PrvCheckPoolVersion(*ppts);
 	}
-	for(i = 0; i < pts->pPool->poolSize; ++i){
-		JumpThunkOS5 *pThunk = pts->pPool->thunks + i;
+	for(i = 0; i < (*ppts)->poolSize; ++i){
+		JumpThunkOS5 *pThunk = (*ppts)->thunks + i;
 		if (IS_FREE_THUNK(pThunk)){
-			if (i > pts->pPool->maxCurSize){
-				pts->pPool->maxCurSize = i;
+			if (i > (*ppts)->maxCurSize){
+				(*ppts)->maxCurSize = i;
 			}
 			return pThunk;
 		}
@@ -241,7 +251,7 @@ JumpThunkOS5 *PrvGetFreeThunk(ThunkStateOS5 *pts){ //TODO: examine treshold
 	return NULL;
 }
 ////////////////////////////////////////////////////////////////////////////////
-JumpThunkOS5 *FindThunkByPrevAddress(ThunkStateOS5 *pts, void *prevAddress, Boolean isPrev){
+JumpThunkOS5 *PrvFindThunkByPrevAddress(ThunkPoolOS5 **ppts, void *prevAddress, Boolean isPrev){
 	UInt32 prevOffset;
 	char *pp = (char *)prevAddress;
 	char *pp0;
@@ -251,26 +261,26 @@ JumpThunkOS5 *FindThunkByPrevAddress(ThunkStateOS5 *pts, void *prevAddress, Bool
 	}else{
 		prevOffset = (UInt32)(&((JumpThunkOS5*)0)->hackJumpIns);
 	}
-	if (pts->pPool == NULL){
-		pts->pPool = YAHM_GetRuntimeSettingsPtr()->pPool;
-		if (pts->pPool == NULL)
+	if (*ppts == NULL){
+		*ppts = YAHM_GetRuntimeSettingsPtr()->pPool;
+		if (*ppts == NULL)
 			return NULL;
-		PrvCheckPoolVersion(pts->pPool);
+		PrvCheckPoolVersion(*ppts);
 	}
-	pp0 = (char *)pts->pPool->thunks;
+	pp0 = (char *)(*ppts)->thunks;
 	pp -= prevOffset; // ptr to current thunk;
 	if ( ((pp - pp0) % sizeof(JumpThunkOS5)) == 0){
 		Int32 idx;
 		pThunk = (JumpThunkOS5 *)pp;
-		idx = pThunk - pts->pPool->thunks;
-		if ((idx >= 0) && (idx <= pts->pPool->maxCurSize) && !IS_FREE_THUNK(pThunk)){
+		idx = pThunk - (*ppts)->thunks;
+		if ((idx >= 0) && (idx <= (*ppts)->maxCurSize) && !IS_FREE_THUNK(pThunk)){
 			return pThunk;
 		}
 	}
 	return NULL;
 }
 ////////////////////////////////////////////////////////////////////////////////
-static void SqueezeThunks(ThunkStateOS5 *pts){
+static void PrvSqueezeThunks(ThunkStateOS5 *pts){
 	int i,j;
 	Boolean found;
 	ThunkPoolOS5 *pPool;
@@ -351,36 +361,32 @@ void *YAHM_FixupGccCode(MemHandle hGot, void *codeInResource, UInt32 *pGotPtr){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-Boolean YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId){
+Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId){
 	JumpThunkOS5 *pThunkDb;
 	ThunkStateOS5 ts;
 	UInt32 gotPtr = 0;
-	// should be in heap for ARM alignment!
-	ArmParameterBlock *pTrapInfo; // = MemPtrNew(sizeof(ArmParameterBlock));
-	
+
 	void *pHackCode;
 	void *pFixedHackCode;
 	UInt32 prevAddress, addr;
 	Boolean commonJump;
 	UInt32 **pStack;
+	Err err;
+	YAHM_SyscallInfo5 ci;
 
-	pTrapInfo = MemPtrNew(sizeof(ArmParameterBlock));
-	if (!PrvGetTrapNum(&pTrapInfo->callInfo, hTrapInfo)){
-		MemPtrFree(pTrapInfo);
-		return false;
+	err = PrvGetTrapNum(&ci, hTrapInfo);
+	if (err != errNone){
+		return err;
 	}
 	pHackCode = MemHandleLock(hTrapCode);
 
-	prevAddress = SysGetTrapAddress1(pTrapInfo);
+	prevAddress = (UInt32)YAHM_GetTrapAddress(ci.baseTableOffset, ci.offset);
 	ClearState(&ts);
-	commonJump = (pTrapInfo->callInfo.flags >> 1) & 7;
+	commonJump = (ci.flags >> 1) & 7;
 
-	pThunkDb = PrvGetFreeThunk(&ts);
+	pThunkDb = PrvGetFreeThunk(&ts.pPool);
 	if (pThunkDb == NULL){
-	//TODO
-		YAHM_warnAboutFullThunk();
-		MemPtrFree(pTrapInfo);
-		return false;
+		return hackErrNoFreeThunk;
 	}
 	pFixedHackCode = YAHM_FixupGccCode(hGot, pHackCode, &gotPtr);
 	if (pFixedHackCode != pHackCode){
@@ -388,28 +394,34 @@ Boolean YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInf
 		commonJump = 0;
 	}
 	// oldest points to prevAddress
-	pThunkDb->oldJumpIns = toold;
+	err = PrvCopyThunk(&pThunkDb->oldJumpIns, YAHM_SHORT_OLD_RES_ID);
+	if (err != errNone){
+		return err; //TODO: resource
+	}
+	//pThunkDb->oldJumpIns = toold;
 	pThunkDb->oldestAddress = ByteSwap32((prevAddress));
 	// earliest points to our handler
 	//
-	pThunkDb->hackJumpIns = (commonJump == 1) ? togoodhack : tohack;
+	//pThunkDb->hackJumpIns = (commonJump == 1) ? togoodhack : tohack;
+	err = PrvCopyThunk(&pThunkDb->hackJumpIns, (commonJump == 1) ? YAHM_SHORT_RES_ID : YAHM_FAT_THUNK_RES_ID );
+	if (err != errNone){
+		return err; //TODO: resource
+	}
 	addr = (UInt32)pFixedHackCode;
-	if (pTrapInfo->callInfo.flags & 1){
+	if (ci.flags & 1){
 		addr |= 1;
 	}
-	//FrmCustomAlert(DebugAlert, "inst5", "", "");
 	addr = ByteSwap32(addr);
 	pThunkDb->hackCodeAddress = addr;
-	pThunkDb->syscallInfo = pTrapInfo->callInfo;
+	pThunkDb->syscallInfo = ci;
 	pThunkDb->R10_GOT = ByteSwap32(gotPtr);
 	pStack = &ts.pPool->saveStackPtr;
 	pThunkDb->stackPtr = ByteSwap32(((UInt32)pStack));
 	FtrSet(creator, resId, (UInt32)(&pThunkDb->oldJumpIns));
 
-	SysSetTrapAddress1(pTrapInfo, (UInt32)&pThunkDb->hackJumpIns);
-	MemPtrFree(pTrapInfo);
-	SqueezeThunks(&ts);
-	return true;
+	YAHM_SetTrapAddress(ci.baseTableOffset, ci.offset, (void *)&pThunkDb->hackJumpIns);
+	PrvSqueezeThunks(&ts);
+	return errNone;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -417,44 +429,44 @@ Boolean YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInf
 void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
 	UInt32 prevAddress;
 	JumpThunkOS5 *pThunkDb;
-	ArmParameterBlock *pTrapInfo = MemPtrNew(sizeof(ArmParameterBlock));
 	void *hackAddress;
 	char buff[80];
 	UInt32 addr;
+	YAHM_SyscallInfo5 ci;
 	
 	ThunkStateOS5 ts;
 	ClearState(&ts);
 	// find creator/resID record block
 	FtrGet(creator, resID, &prevAddress);
 	// make dummy thunk
-	pThunkDb = FindThunkByPrevAddress(&ts, (void *)prevAddress, true);
+	pThunkDb = PrvFindThunkByPrevAddress(&ts.pPool, (void *)prevAddress, true);
 	StrPrintF(buff, "%lx %lx invalid tc", prevAddress, &(ts.pPool->thunks[0]));
 	ErrFatalDisplayIf(pThunkDb == NULL, buff);
-	pTrapInfo->callInfo = pThunkDb->syscallInfo;
+	ci  = pThunkDb->syscallInfo;
 	addr = ByteSwap32(((UInt32)pThunkDb->hackCodeAddress));
 	addr &= ~1; // remove thunk
 	hackAddress = (void *)(addr);
 	pThunkDb->hackCodeAddress = ByteSwap32(((UInt32)&pThunkDb->oldJumpIns));
 
 	// if we was the latest catcher, clear dummy thunk
-	if ((SysGetTrapAddress1(pTrapInfo) == (UInt32)&pThunkDb->hackJumpIns)){
-		SysSetTrapAddress1(pTrapInfo, ByteSwap32(pThunkDb->oldestAddress));
+	if (((UInt32)YAHM_GetTrapAddress(ci.baseTableOffset, ci.offset) == (UInt32)&pThunkDb->hackJumpIns)){
+		YAHM_SetTrapAddress(ci.baseTableOffset, ci.offset, (void *)(ByteSwap32(pThunkDb->oldestAddress)));
 		FreeThunk(pThunkDb);
 		// skip also all dummiez
 		{
 			UInt32 pp = ByteSwap32(pThunkDb->oldestAddress);
 			while(true){
-				JumpThunkOS5 *pT = FindThunkByPrevAddress(&ts, (void *)pp, true);
+				JumpThunkOS5 *pT = PrvFindThunkByPrevAddress(&ts.pPool, (void *)pp, true);
 				if ((pT == NULL) ||!IS_DUMMY_THUNK(pT) ){
 					break;
 				}
 				pp = ByteSwap32(pT->oldestAddress);
-				SysSetTrapAddress1(pTrapInfo, pp);
+				YAHM_SetTrapAddress(ci.baseTableOffset, ci.offset, (void *)pp);
 				FreeThunk(pT);
 			}
 		}
 	}
-	SqueezeThunks(&ts);
+	PrvSqueezeThunks(&ts);
 	if (MemPtrDataStorage(hackAddress)){
 		MemHandleUnlock(hCode);
 	}else{
@@ -473,9 +485,9 @@ typedef struct{
 	UInt32 gotPtr;
 }InitParam;
 ////////////////////////////////////////////////////////////////////////////////
-Boolean YAHM_ExecuteInitialization(void *initCode, Boolean init){
+Err YAHM_ExecuteInitialization(void *initCode, Boolean init){
 
-	MemHandle h = DmGetResource(HACK_ARM_RES_TYPE, YAHM_INIT_RES_ID);
+	MemHandle hInitStub = DmGetResource(HACK_ARM_RES_TYPE, YAHM_INIT_RES_ID);
 	MemHandle hGot;
 	InitParam *par;
 
@@ -484,22 +496,23 @@ Boolean YAHM_ExecuteInitialization(void *initCode, Boolean init){
 	UInt32 res;
 	UInt32 param = init ? 1 : 0;
 
-	if (h == NULL){
-		return false;
+	if (hInitStub == NULL){
+		return hackErrNoLibraryArmlet;
 	}
 	hGot = DmGet1Resource(HACK_GOT_RES_TYPE, HACK_CODE_INIT);
 	par = MemPtrNew(sizeof(InitParam));
-	initStub = MemHandleLock(h);
+	initStub = MemHandleLock(hInitStub);
 
-	par->gotPtr	 = 0;
+	par->gotPtr = 0;
 	fixedInitCode = YAHM_FixupGccCode(hGot, initCode, &par->gotPtr);
 	param |= (UInt32)fixedInitCode;
 	par->param = ByteSwap32(param);
 	par->gotPtr = ByteSwap32(par->gotPtr);
+	
 	res = PceNativeCall(initStub, par);
 
-	MemHandleUnlock(h);
-	DmReleaseResource(h);
+	MemHandleUnlock(hInitStub);
+	DmReleaseResource(hInitStub);
 
 	if (fixedInitCode != initCode){
 		MemPtrFree(fixedInitCode);
@@ -511,5 +524,5 @@ Boolean YAHM_ExecuteInitialization(void *initCode, Boolean init){
 		DmReleaseResource(hGot);
 	}
 
-	return res != 0;
+	return res ? errNone : hackErrInitializationFailed;
 }
