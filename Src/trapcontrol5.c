@@ -229,7 +229,7 @@ static void PrvCheckPoolVersion(ThunkPoolOS5 *pPool){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-JumpThunkOS5 *PrvGetFreeThunk(ThunkPoolOS5 **ppts){ //TODO: examine treshold
+JumpThunkOS5 *PrvGetFreeThunk(ThunkPoolOS5 **ppts){ 
 	int i;
 	if (*ppts == NULL){
 		*ppts = YAHM_GetRuntimeSettingsPtr()->pPool;
@@ -313,7 +313,7 @@ static void PrvSqueezeThunks(ThunkStateOS5 *pts){
 							}
 							found = true;
 						}
-						if (pPool->thunks[i].oldestAddress == ByteSwap32(((UInt32)&pPool->thunks[j].hackJumpIns))) ; //TODO optimize dummy_use
+						if (pPool->thunks[i].oldestAddress == ByteSwap32(((UInt32)&pPool->thunks[j].hackJumpIns))) ; 
 					}
 				}
 			}
@@ -396,7 +396,7 @@ Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, U
 	// oldest points to prevAddress
 	err = PrvCopyThunk(&pThunkDb->oldJumpIns, YAHM_SHORT_OLD_RES_ID);
 	if (err != errNone){
-		return err; //TODO: resource
+		return err; 
 	}
 	//pThunkDb->oldJumpIns = toold;
 	pThunkDb->oldestAddress = ByteSwap32((prevAddress));
@@ -405,7 +405,7 @@ Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, U
 	//pThunkDb->hackJumpIns = (commonJump == 1) ? togoodhack : tohack;
 	err = PrvCopyThunk(&pThunkDb->hackJumpIns, (commonJump == 1) ? YAHM_SHORT_RES_ID : YAHM_FAT_THUNK_RES_ID );
 	if (err != errNone){
-		return err; //TODO: resource
+		return err;
 	}
 	addr = (UInt32)pFixedHackCode;
 	if (ci.flags & 1){

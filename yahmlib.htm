@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1;" /><meta name="keywords" content="wiki, openwiki, wikiwiki, wiki wiki, interwiki, post-it note, collaborative web, open source, ASP, IIS, XML, XHTML, RSS, dotnet, weblog, log, Laurens Pit, LaurensPit" /><meta name="description" content="OpenWiki - The post-it note of the web." /><meta name="ROBOTS" content="INDEX,FOLLOW" /><meta name="MSSmartTagsPreventParsing" content="true" /><title>O p e n W i k i - Yahm Library</title><link rel="stylesheet" type="text/css" href="ow.css" /></head><body bgcolor="#ffffff" onload="window.defaultStatus='OpenWiki, the post-it note of the web.'"><h2><a name="h0" class="same">Yahm Library</a></h2><dl>
+<li><a href="#h1">Library purpose</a></li>
+<li><a href="#h2">Library review</a></li>
+<li><a href="#h3">Library integration</a></li>
+<li><a href="#h4">Error codes</a></li>
+<li><a href="#h5">High level API</a></li>
+<li><a href="#h6">Middle level API</a></li>
+<li><a href="#h7">Low level API</a></li>
+<li><a href="#h8">User-defined functions</a></li>
+<dl>
+<li><a href="#h9">Persistent settings</a></li>
+<li><a href="#h10">Runtime settings</a></li>
+</dl>
+</dl>
+
+<p></p>
+<a name="h1"></a><h3>Library purpose</h3>
+<p></p>
+YAHM library was designed for simple migrating from ARM-based hack to standalone application. With help of YAHMlib you can easily implement syscall patching inside your application.
+<p></p>
+<a name="h2"></a><h3>Library review</h3>
+<p></p>
+YAHMLib has 3 levels of API.
+<p></p>
+<ul>
+<li>High level API is the easiest one. WIth this API you can consider your application as hack. API allow you to activate and deactivate patches.</li>
+<li>Middle level API. This level allows manual patching of each syscall.</li>
+<li>Low level API. This level implements ARM versions of SysGetTrapAddress and SysSetTrapAddress functions.</li>
+</ul>
+<p></p>
+The benefits of YAHMLIb
+<ul>
+<li>Simple application structure. One ARM resource per one trap</li>
+<li>Easy interaction with other patches. YAHMLib can work with both YAHM hacks and other standalone pseudo-hacks.</li>
+<li>Trap chain support. YAHMLib carefully works with trap chain. If you want to deactivate hack from middle of this chain, you can be sure that chain remain unbroken.</li>
+<li>Processor cache issues are solved automagically.</li>
+<li>Thumb-awareness support. You can compile patches as pure ARM code. Library wrap your code with thumb-aware thunks.</li>
+<li>GCC .got section is processed automatically.</li>
+</ul>
+<p></p>
+Current documentation assumes that reader know the rules of hack creation. Only YAHMLib API is duscussed there.
+<p></p>
+<a name="h3"></a><h3>Library integration</h3>
+YAHM library can be used with both CW and GCC compilers. Just include lowlevel.c and trapcontrol5.c sources to your project. yahm_lib.h header contains all YAHM API functions. Include 5 arm resources into target executable.
+<p></p>
+Sample part of Pilrc resource file:
+<pre class="code">
+DATA "armc" ID 9998 "armc270E.bin"
+DATA "armc" ID 9999 "armc270F.bin"
+
+DATA "armc" ID 9900 "fatthunk.bin"
+DATA "armc" ID 9901 "SHORT.BIN"
+DATA "armc" ID 9902 "shorttoold.bin"
+</pre>
+<p></p>
+<a name="h4"></a><h3>Error codes</h3>
+<p></p>
+YAHM library return some custom errors:
+<p></p>
+<ul>
+<li>hackErrWrongTrapInfo - returned if TRA5 resource wrong</li>
+<li>hackErrNoFreeThunk - library can't find free thunk for patch. Increase thunkCount value and restart device.</li>
+<li>hackErrNoActiveApp - library can't detect current application. Avoid trap installation from callback-based notification handlers.</li>
+<li>hackErrInitializationFailed - hack initialization function (resource armc 999) returns false.</li>
+<li>hackErrNoHackResources - current app have no patch resources. Check that all 'armc' and 'TRA5' are added to executable.</li>
+<li>hackErrNoLibraryArmlet - library can't find it's own armlets. Include it into application.</li>
+</ul>
+<p></p>
+<p></p>
+<a name="h5"></a><h3>High level API</h3>
+High level API is the simplest one. Just move all resources from hack to standalone application. Call two functions: one for activation and one for deactivation.
+<pre class="code">
+Err YAHM_InstallHack(void);
+Err YAHM_UninstallHack(void);
+</pre>
+<p></p>
+YAHM_InstallHack install all 'armc' resources from current application. Alse 'armc' 999 resource is called before.
+<p></p>
+YAHM_UninstallHack uninstall patches that can be found in current application.
+<p></p>
+Known issues:
+<ol type="1">
+<li>Check type of application in hack code. Now it's 'appl', not the 'code'.</li>
+<li>Implement configuration screen manually. It's much simple than hack configuration screen.</li>
+</ol>
+<p></p>
+<p></p>
+<a name="h6"></a><h3>Middle level API</h3>
+<p></p>
+Use middle level instead of high level if you want flexible trap patching. High level call middle level functions in cycle
+<p></p>
+<pre class="code">
+Err YAHM_ExecuteInitialization(void *initCodeResource, Boolean init);
+Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId);
+void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID);
+void *YAHM_FixupGccCode(MemHandle hGot, void *codeResource, UInt32 *pGotPtr);
+</pre>
+<p></p>
+YAHM_ExecuteInitialization used for calling initialization/deinitialization resouce manually.
+<p></p>
+Call YAHM_InstallTrap to install trap. Pass handles for code, .got, trap info for proper installation. Function save old syscall pointer to feature with creator and resId parameters.
+<p></p>
+Call YAHM_UninstallTrap to uninstall trap.
+<p></p>
+YAHM_FixupGccCode called for manual fixup for GCC. Pass code resource and got resource to function and retreive result from pGotPtr parameter. If *pGotParameter not equal to codeResouce, you should free it on exit.
+<p></p>
+<p></p>
+<a name="h7"></a><h3>Low level API</h3>
+<p></p>
+Low level API mimics pre-OS5 API. Just two functions for setting and retrieving trap handler address. Those functions require deep knowledge of ARM programming.
+<p></p>
+<pre class="code">
+void *YAHM_GetTrapAddress(UInt32 base, UInt32 offset);
+void *YAHM_SetTrapAddress(UInt32 base, UInt32 offset, void *trapHandler);
+</pre>
+<p></p>
+<a name="h8"></a><h3>User-defined functions</h3>
+YAHMLib requires user-defined functions to work. Developer should implement those simple functions. The simplest version are showed below.
+<p></p>
+<a name="h9"></a><h4>Persistent settings</h4>
+<pre class="code">
+typedef struct{ // Global YAHM settings. Should be saved in preferences.
+        UInt32 protectYAHM; // if true, then YAHM protect application database
+        UInt32 thunkCount;        // number of trap slots. allocate at least 40-50 slots.
+}YAHM_persistSettings;
+
+// copy persist settings to structure, allocated by YAHM
+extern void YAHM_GetPersistSettings(YAHM_persistSettings *pSettings);
+
+// implementation sample
+void YAHM_GetPersistSettings(YAHM_persistSettings *pSettings){
+        pSettings-&gt;protectYAHM = true;
+        pSettings-&gt;thunkCount = 40;
+}
+</pre>
+<p></p>
+YAHMLibrary require persistent setting to work. Developer should implement YAHM_GetPersistSettings function for changing library behaviour. Those settings can be either set in code or can be changed by user.
+<p></p>
+<ul>
+<li>protectYAHM - if this field set to non-zero, library protect current application against deletion when traps are set. Current application checks with SysCurAppDatabase syscall. Only YAHM_InstallHack and YAHM_UninstallHack function use this value.</li>
+<li>thunkCount. This field is used for thunk array allocation. YAHM allocates one thunk per active syscall patch. Usually patch deactivation frees thunk, but sometimes patch deactivation require leaving thunk in "used" state to support patch linked list integrity. If your code require reset for deactivation, you can make thunkCount equal to number of patched traps. Else, especially if EvtGetEvent is patched or your app deactivates on each hotsync, allocate 40-50 thunks.</li>
+</ul>
+<p></p>
+<a name="h10"></a><h4>Runtime settings</h4>
+<pre class="code">
+typedef struct{ // Runtime YAHM settings. They are valid on single YAHM execution. Should be saved in feature pointer
+        UInt32 activeHacksCount;
+        void *pPool;
+}YAHM_runtimeSettings;
+
+extern void YAHM_SetRuntimeSettings(YAHM_runtimeSettings *pSettings);
+// return ptr to runtime settings structure.
+extern YAHM_runtimeSettings *YAHM_GetRuntimeSettingsPtr(void);
+
+// callback function. 
+extern void YAHM_warnAboutIncompatibleUpdate(void);
+
+
+// sample implementation
+void YAHM_SetRuntimeSettings(YAHM_runtimeSettings *pSettings)
+{
+         FtrSet(MY_CRID, YAHM_FTR_ID, (UInt32)pSettings);
+}
+
+YAHM_runtimeSettings *YAHM_GetRuntimeSettingsPtr(void)
+{
+        YAHM_runtimeSettings *pSet = NULL;
+        FtrGet(CRID, YAHM_FTR_ID, (UInt32 *)&amp;pSet);
+        if (pSet == NULL){
+                pSet = MemPtrNew(sizeof(YAHM_runtimeSettings));
+                YAHM_SetRuntimeSettings(pSet);
+                MemPtrSetOwner(pSet, 0);
+                MemSet(pSet, sizeof(YAHM_runtimeSettings), 0);
+        }
+        return pSet;
+}
+
+
+
+</pre>
+<p></p>
+Developer is responsible for allocating and saving YAHM library runtime settings. YAHM_GetRuntimeSettingsPtr function should return pointer to persistent structure. For the first time this function should allocate memory chunk for settings. The best way is saving pointer to structure in feature memory. Runtime settings should be valid from the first hack activation up to device reset. You can share one runtime settings between different programs. Function YAHM_warnAboutIncompatibleUpdate is called when several programs (or two different program versions) are used different versions of YAHM Library. This function usually should call SysFatalAlert.
+<p></p>
+</body></html>
