@@ -1,0 +1,11 @@
+#include "yahm_int.h"
+
+
+DATA "armc" ID YAHM_INIT_RES_ID "armc270E.bin"
+DATA "armc" ID YAHM_SET_TRAP_RES_ID "armc270F.bin"
+
+DATA "armc" ID YAHM_FAT_THUNK_RES_ID "fatthunk.bin"
+DATA "armc" ID YAHM_SHORT_RES_ID "SHORT.BIN"
+DATA "armc" ID  YAHM_SHORT_OLD_RES_ID "shorttoold.bin"
+DATA "armc" ID  YAHM_CW_THUNK_RES_ID "cwthunk.bin"
+
