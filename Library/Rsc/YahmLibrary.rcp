@@ -9,3 +9,6 @@ DATA "armc" ID YAHM_SHORT_RES_ID "SHORT.BIN"
 DATA "armc" ID  YAHM_SHORT_OLD_RES_ID "shorttoold.bin"
 DATA "armc" ID  YAHM_CW_THUNK_RES_ID "cwthunk.bin"
 
+DATA "armc" ID  YAHM_FTR_GET_THUNK_RES_ID "ftrgetthunk.bin"
+DATA "armc" ID  YAHM_THUNK_RETURN_RES_ID "thunkreturn.bin"
+

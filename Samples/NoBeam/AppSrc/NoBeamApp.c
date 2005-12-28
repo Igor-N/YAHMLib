@@ -244,7 +244,7 @@ void InstallHack(void){
 			FrmCustomAlert(PatchInstalledWithErrorAlert, buf, "", "");
 		}
 	}else{
-		FrmAlert(PatchAlreadyInstalledAlert);
+		FrmCustomAlert(PatchAlreadyInstalledAlert, "1", "2", "3");
 	}
 }
 				

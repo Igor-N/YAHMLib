@@ -46,7 +46,7 @@ Err YAHM_InstallHack(void){
 
 	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
 	// install resource execution
-	hCode = DmGet1Resource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
+	hCode = DmGetResource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
 	if (hCode != NULL){
 		void *pfn =  MemHandleLock(hCode);
 		Err err = YAHM_ExecuteInitialization(pfn, true);
@@ -59,9 +59,9 @@ Err YAHM_InstallHack(void){
 	}
 
 	// install all code resources
-	for(resNo = HACK_CODE_RESOURCE_START; (hCode = DmGet1Resource(HACK_ARM_RES_TYPE, resNo)) ; resNo++){
-		MemHandle hGot = DmGet1Resource(HACK_GOT_RES_TYPE, resNo);
-		MemHandle hTrapInfo = DmGet1Resource(TRAP_RESOURCE_TYPE5, resNo);
+	for(resNo = HACK_CODE_RESOURCE_START; (hCode = DmGetResource(HACK_ARM_RES_TYPE, resNo)) ; resNo++){
+		MemHandle hGot = DmGetResource(HACK_GOT_RES_TYPE, resNo);
+		MemHandle hTrapInfo = DmGetResource(TRAP_RESOURCE_TYPE5, resNo);
 		Err err;
 		err = YAHM_InstallTrap(hCode, hGot, hTrapInfo, crid, resNo);
 		
@@ -75,7 +75,7 @@ Err YAHM_InstallHack(void){
 			}
 			DmReleaseResource(hCode);
 			for(resNo1 = HACK_CODE_RESOURCE_START; resNo1 < resNo; ++resNo){
-				hCode = DmGet1Resource(HACK_ARM_RES_TYPE, resNo);
+				hCode = DmGetResource(HACK_ARM_RES_TYPE, resNo);
 				YAHM_UninstallTrap(hCode, crid, resNo1);
 				DmReleaseResource(hCode);
 			}
@@ -140,12 +140,12 @@ Err YAHM_UninstallHack(void){
 	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
 
 	// uninstall all code resources
-	for(resID = HACK_CODE_RESOURCE_START; (hCode = DmGet1Resource(HACK_ARM_RES_TYPE, resID)) ; ++resID){
+	for(resID = HACK_CODE_RESOURCE_START; (hCode = DmGetResource(HACK_ARM_RES_TYPE, resID)) ; ++resID){
 		YAHM_UninstallTrap(hCode, crid, resID);
 		DmReleaseResource(hCode);
 	}
 	// uninstall notification
-	hCode = DmGet1Resource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
+	hCode = DmGetResource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
 	if (hCode != NULL){
 		void *pfn = MemHandleLock(hCode);
 		YAHM_ExecuteInitialization(pfn, false);

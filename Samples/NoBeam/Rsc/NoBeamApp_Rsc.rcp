@@ -83,7 +83,7 @@ ALERT ID PatchAlreadyInstalledAlert
     ERROR
 BEGIN
     TITLE "YAHMLib error"
-    MESSAGE "Patch already installed"
+    MESSAGE "Patch already installed ^1"
     BUTTONS "OK"
 END
 

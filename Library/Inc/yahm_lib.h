@@ -28,6 +28,9 @@ Err YAHM_UninstallHack(void);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Middle level API: activate each trap independently
+#define YAHM_FLAG_THUMB	1
+#define YAHM_FLAG_ARM	0
+
 typedef struct YAHM_SyscallInfo5{
 	UInt32 baseTableOffset;
 	UInt32 offset;
@@ -42,11 +45,16 @@ typedef struct YAHM_SyscallInfo5{
 enum {
 	THUNK_COMMON = 0,
 	THUNK_FAST,
-	THUNK_CW
+	THUNK_CW,
+	THUNK_FTR_GET,
+	THUNK_LR_IN_R3,
+	THUNK_MAX_TYPE
 };
 
 // execute 'armc' #999 (hack initialization)
 Err YAHM_ExecuteInitialization(void *initCodeResource, Boolean init);
+Err YAHM_ExecuteInitializationEx(MemHandle hInitCode, Boolean init);
+
 // 3 resource handles: arm code, ,got secion (can be NULL) and trap description
 // creator and resId are used for feature set.
 Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId);
@@ -59,9 +67,9 @@ Err YAHM_InstallTraps(UInt32 trapCount, void **pTrapCodes, YAHM_SyscallInfo5 * p
 Err YAHM_UninstallTraps(UInt32 trapCount, void **pTrapCodes);
 
 
-void *YAHM_FixupGccCode(MemHandle hGot, void *codeResource, UInt32 *pGotPtr);
-
-
+void *YAHM_FixupGccCode(MemHandle hGot, void *codeResource, void* *pGotPtr);
+void *YAHM_FixupGccCodeEx(MemHandle hGot, MemHandle  hCode, void* *pGotPtr);
+void YAHM_FreeRelocatedChunk(void *pCode);
 ////////////////////////////////////////////////////////////////////////////////
 // low level API: hand-made traps. no tracking for this traps at all
 // return current address
@@ -76,7 +84,7 @@ typedef struct{ // Global YAHM settings. Should be saved in preferences.
 	UInt32 thunkCount;	// number of trap slots. allocate at least 40-50 slots.
 }YAHM_persistSettings;
 
-typedef struct{ // Runtime YAHM settings. They are valid on single YAHM execution. Should be saved in feature pointer
+typedef struct YAHM_runtimeSettings{ // Runtime YAHM settings. They are valid on single YAHM execution. Should be saved in feature pointer
 	UInt32 activeHacksCount;
 	void *pPool;
 }YAHM_runtimeSettings;

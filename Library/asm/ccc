@@ -1,18 +1,15 @@
-arm-palmos-gcc -Wall -O1 -nostartfiles settrap.c -o settrap cache.s libarmboot.a  libarmhal.a 
+arm-palmos-gcc -Wall -O1 -nostartfiles settrap.c -o settrap cache.s libarmboot.a libarmhal.a
 arm-palmos-objcopy.exe -j .text  -O binary settrap armc270F.bin
 
 arm-palmos-gcc -Wall  -O1 -nostartfiles callinit.s -o callinit cache.s
 arm-palmos-objcopy.exe -j .text  -O binary callinit armc270E.bin
 
-arm-palmos-gcc -nostartfiles -O2 gets3.s -o gets31
-arm-palmos-objcopy.exe -j .text  -O binary gets31 shorttoold.bin
+arm-palmos-gcc -nostartfiles -O2 thunks.s -o gets31
+arm-palmos-objcopy.exe -j ShortToOld  -O binary gets31 shorttoold.bin
+arm-palmos-objcopy.exe -j ShortToNew  -O binary gets31 short.bin
+arm-palmos-objcopy.exe -j FullToNew   -O binary gets31 fatthunk.bin
+arm-palmos-objcopy.exe -j CW1ToNew     -O binary gets31 cwthunk.bin
+arm-palmos-objcopy.exe -j FtrToNew    -O binary gets31 ftrgetthunk.bin
+arm-palmos-objcopy.exe -j ThunkReturn    -O binary gets31 thunkreturn.bin
+arm-palmos-objcopy.exe -j LRInR3    -O binary gets31 thunkwithlr.bin
 
-
-arm-palmos-gcc -nostartfiles -O2 gets5.s -o gets5
-arm-palmos-objcopy.exe -j .text  -O binary gets5 fatthunk.bin
-
-arm-palmos-gcc -nostartfiles -O2 gets4.s -o gets4
-arm-palmos-objcopy.exe -j .text  -O binary gets4 short.bin
-
-arm-palmos-gcc -nostartfiles -O2 gets6.s -o gets6
-arm-palmos-objcopy.exe -j .text  -O binary gets6 cwthunk.bin
