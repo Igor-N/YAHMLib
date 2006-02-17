@@ -5,6 +5,10 @@
 #define NOT_PILRC
 #include "yahm_int.h"
 #include "yahm_internals.h"
+#ifdef YAHM_ITSELF
+#include "log.h"
+#include "yahmrs.h"
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 typedef struct{
@@ -71,7 +75,7 @@ Err YAHM_ExecuteInitializationEx(MemHandle hInitializationResource, Boolean init
 
 	pInitializationCode = MemHandleLock(hInitializationResource);
 	err = PrvExecuteInitialization(pInitializationCode, init, &res);
-	MemHandleUnlock(pInitializationCode);
+	MemHandleUnlock(hInitializationResource);
 	return (err != errNone) ? err : (res ? errNone : hackErrInitializationFailed);
 }
 ////////////////////////////////////////////////////////////////////////////////

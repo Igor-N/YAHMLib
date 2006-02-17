@@ -7,6 +7,7 @@
 #include "yahm_internals.h"
 #ifdef YAHM_ITSELF
 #include "log.h"
+#include "yahmrs.h"
 #endif
 
 
@@ -107,7 +108,6 @@ static JumpThunkOS5 *PrvAllocThunk(ThunkPoolOS5 *pts);
 static JumpThunkOS5 *PrvFindThunkByPrevAddress(ThunkPoolOS5 *pts, void *prevAddress, Boolean isPrev);
 static void PrvSqueezeThunks(ThunkPoolOS5 **pts);
 static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo);
-static void *PrvFixupGccCode(void *pCodeResource, UInt32 codeSize, UInt32 *pUnrelocatedGotSection, UInt32 gotSize, void **ppGotPtr);
 ////////////////////////////////////////////////////////////////////////////////
 static inline void PrvCopyCreator(char *s, UInt32 crid){
 	MemMove(s, &crid, 4);
