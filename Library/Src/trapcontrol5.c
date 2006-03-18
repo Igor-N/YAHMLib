@@ -434,7 +434,7 @@ void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID){
 	void *hackAddress;
 	UInt32 lockCount;
 	PrvUninstallTrap(creator, resID, &hackAddress, &lockCount);
-	if (lockCount == 1){
+	if (lockCount == 0){
 		YAHM_FreeRelocatedChunk(hackAddress);
 	}
 }
