@@ -20,6 +20,10 @@
 #define hackErrNoHackResources (hackErrorClass | 5)
 // can't find library own armlets
 #define hackErrNoLibraryArmlet (hackErrorClass | 6)
+// gettrapaddress returns zero
+#define hackErrBadResultOfGetTrapAddress (hackErrorClass | 7)
+// feature contains wrong value
+#define hackErrBadFeatureValue (hackErrorClass | 8)
 
 ////////////////////////////////////////////////////////////////////////////////
 // High level API: consider current app as hack. All resources should be similar to hack resources.
@@ -98,4 +102,5 @@ extern YAHM_runtimeSettings *YAHM_GetRuntimeSettingsPtr(void);
 // callback function. 
 extern void YAHM_warnAboutIncompatibleUpdate(void);
 
+extern void DumpRuntimeInfo(char *pBuf);
 #endif // _YAHM_LIB_H_

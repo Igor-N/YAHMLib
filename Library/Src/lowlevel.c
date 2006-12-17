@@ -43,19 +43,15 @@ Err YAHM_InstallHack(void){
 	if (SysCurAppDatabase(&cardNo, &lid) != errNone){
 		return hackErrNoActiveApp;
 	}
-
 	DmDatabaseInfo(cardNo, lid, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, &crid);
 	// install resource execution
 	hCode = DmGetResource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
 	if (hCode != NULL){
-		void *pfn =  MemHandleLock(hCode);
-		Err err = YAHM_ExecuteInitialization(pfn, true);
+		Err err = YAHM_ExecuteInitializationEx(hCode, true);
+		DmReleaseResource(hCode);
 		if (err != errNone){
-			MemHandleUnlock(hCode);
 			return err;
 		}
-		MemHandleUnlock(hCode);
-		DmReleaseResource(hCode);
 	}
 
 	// install all code resources
@@ -147,9 +143,7 @@ Err YAHM_UninstallHack(void){
 	// uninstall notification
 	hCode = DmGetResource(HACK_ARM_RES_TYPE, HACK_CODE_INIT);
 	if (hCode != NULL){
-		void *pfn = MemHandleLock(hCode);
-		YAHM_ExecuteInitialization(pfn, false);
-		MemHandleUnlock(hCode);
+		YAHM_ExecuteInitializationEx(hCode, false);
 		DmReleaseResource(hCode);
 	}
 	PrvProtectApp(false);

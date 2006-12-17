@@ -43,7 +43,8 @@ inline UInt32 RoundCeil4(UInt32 x){
 // if return != NULL
 //		*ppGotPtr points to .got in relocated code
 // if return == pCodeResource, there were no relocation (no .got and no NVFS)
-// PrvFixupGccCode doesn't  require pUnrelocatedCode and pUnrelocatedGot to be resources.
+// PrvFixupGccCode doesn't require pUnrelocatedCode and pUnrelocatedGot to be resources.
+// PrvFixupGccCode doesn't make locks or unlocks. Only MemPtrNew called.
 static void *PrvFixupGccCode(void *pUnrelocatedCode, UInt32 codeSize, UInt32 *pUnrelocatedGot, UInt32 gotSize, void **ppGotPtr){
 	UInt32 *pRelocatedGot;
 	UInt8 *pRelocatedCode;
@@ -78,6 +79,7 @@ static void *PrvFixupGccCode(void *pUnrelocatedCode, UInt32 codeSize, UInt32 *pU
 	return pRelocatedCode;	
 }
 ////////////////////////////////////////////////////////////////////////////////
+// YAHM_FixupGccCode doesn't make locks or unlocks. Only MemPtrNew called from deeper level
 void *YAHM_FixupGccCode(MemHandle hUnrelocatedGotSection, void *pCodeResource, void **ppGotPtr){
 	void *pRelocatedCode;
 	UInt32 *pUnrelocatedGotSection;
@@ -92,7 +94,8 @@ void *YAHM_FixupGccCode(MemHandle hUnrelocatedGotSection, void *pCodeResource, v
 }
 ////////////////////////////////////////////////////////////////////////////////
 // if no relocation, locked code resource returned
-// else new code in dynamic memory returned. hCodeResource remain unlocked
+// else new code in dynamic memory returned. hCodeResource remains unlocked
+// YAHM_FixupGccCodeEx either returns pointer to locked hCodeResource or returns new chunk in heap
 void *YAHM_FixupGccCodeEx(MemHandle hUnrelocatedGotSection, MemHandle  hCodeResource, void **ppGotPtr){
 	void *pRelocatedCode, *pCodeResource;
 	if (hCodeResource == NULL){
@@ -107,6 +110,7 @@ void *YAHM_FixupGccCodeEx(MemHandle hUnrelocatedGotSection, MemHandle  hCodeReso
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// YAHM_FreeRelocatedChunk clear resources after YAHM_FixupGccCodeEx
 void YAHM_FreeRelocatedChunk(void *pAddress){
 	if (MemPtrDataStorage(pAddress)){
 		MemPtrUnlock(pAddress);

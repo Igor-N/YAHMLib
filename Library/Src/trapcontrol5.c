@@ -271,11 +271,15 @@ static void PrvSqueezeThunks(ThunkPoolOS5 **ppThunkPool){
 static Err PrvInstallTrap(void *pCode, void *pGotPtr, YAHM_SyscallInfo5 *pTrapInfo, UInt32 creator, UInt16 resID){
 	JumpThunkOS5 *pThunk;
 	ThunkPoolOS5 *pPool = NULL;
-
 	UInt32 prevAddress, addr;
 	UInt16 thunkType, thunkId;
 	UInt32 **pStack;
+	UInt32 oldFtr = 0;
 	Err err = errNone;
+	void *oldAddr;
+	Boolean ftrWasSet = false;
+
+	// resource IDs with thunk code
 #ifdef __MWERKS__
 	// CW can place into data resource
 	UInt16 thunk2res[THUNK_MAX_TYPE];
@@ -290,6 +294,14 @@ static Err PrvInstallTrap(void *pCode, void *pGotPtr, YAHM_SyscallInfo5 *pTrapIn
 #endif	
 
 	prevAddress = REINTERPRET_CAST(UInt32, YAHM_GetTrapAddress(pTrapInfo->baseTableOffset, pTrapInfo->offset));
+	if (prevAddress == NULL){
+		return hackErrBadResultOfGetTrapAddress;
+	}
+
+	if ((FtrGet(creator, resID, &oldFtr) == errNone) && (oldFtr != 0)){
+		return hackErrBadFeatureValue;
+	}
+
 	thunkType = PrvGetThunkType(pTrapInfo);
 
 	pPool = YAHM_GetRuntimeSettingsPtr()->pPool;
@@ -318,40 +330,43 @@ static Err PrvInstallTrap(void *pCode, void *pGotPtr, YAHM_SyscallInfo5 *pTrapIn
 	if (err != errNone){
 		goto Exit;
 	}
-	addr =REINTERPRET_CAST(UInt32, pCode);
+
+	addr = REINTERPRET_CAST(UInt32, pCode);
 	if (pTrapInfo->flags & YAHM_FLAG_THUMB){
 		addr |= 1;
 	}
-	addr = ByteSwap32(addr);
-	pThunk->hackCodeAddress = addr;
+	pThunk->hackCodeAddress = ByteSwap32(addr);
 	
 	// set R10. special value for CW
-	if (thunkType == THUNK_CW){
-		pThunk->R10_GOT = addr;
-	}else{
-		pThunk->R10_GOT = SwapPtr32(pGotPtr);
-	}
-	
+	pThunk->R10_GOT = ((thunkType == THUNK_CW) ? addr : SwapPtr32(pGotPtr));
 	// set lock field
 	pThunk->lockCount = ByteSwap32(1);
-	
 	// set info fields
 	pThunk->syscallInfo = *pTrapInfo;
 	pThunk->creator = creator;
-	
 	// set stack
 	pStack = &pPool->saveStackPtr;
 	pThunk->stackPtr = SwapPtr32(pStack);
 	
 	// set feature
 	FtrSet(creator, resID, REINTERPRET_CAST(UInt32, (&pThunk->oldJumpIns)));
+	ftrWasSet = true;
 
-	YAHM_SetTrapAddress(pTrapInfo->baseTableOffset, pTrapInfo->offset, &pThunk->hackJumpIns);
+	// address set must be the latest operation to ensure all things are ready for trap call.
+	oldAddr = YAHM_SetTrapAddress(pTrapInfo->baseTableOffset, pTrapInfo->offset, &pThunk->hackJumpIns);
+	if (oldAddr == NULL){
+		err = hackErrBadResultOfGetTrapAddress;
+		goto Exit;
+	}
 	PrvSqueezeThunks(&pPool);
-
 Exit:	
-	if ((err != errNone) && (pThunk != NULL)){
-		PrvFreeThunk(pThunk);
+	if (err != errNone){
+		if (pThunk != NULL){
+			PrvFreeThunk(pThunk);
+		}
+		if (ftrWasSet){
+			FtrUnregister(creator, resID);
+		}
 	}
 	return err;
 }
@@ -390,6 +405,10 @@ static void PrvUninstallTrap(UInt32 creator, UInt16 resID, void **ppRelocatedCod
 	
 	// get address of previous thunk  and find thunk address
 	FtrGet(creator, resID, REINTERPRET_CAST(UInt32 *, &pPrevAddress));
+	if (pPrevAddress == NULL){
+		ErrFatalDisplayIf(pPrevAddress == NULL, "Wrong patch uninstall");
+		return;
+	}
 	pThunk = PrvFindThunkByPrevAddress(pPool, pPrevAddress, true);
 	if (pThunk == NULL){
 		char buff[80];
@@ -398,7 +417,7 @@ static void PrvUninstallTrap(UInt32 creator, UInt16 resID, void **ppRelocatedCod
 	}
 	ci  = pThunk->syscallInfo;
 	
-	uRelocatedCode = (UInt32)pThunk->hackCodeAddress;
+	uRelocatedCode = pThunk->hackCodeAddress;
 	uRelocatedCode = (ByteSwap32(uRelocatedCode)) & ~1;// remove thumb
 	
 	lockCount = ByteSwap32(pThunk->lockCount);
@@ -448,3 +467,51 @@ void YAHM_UninstallTrapFromMemory(void *pTrapCode, UInt32 creator, UInt16 resID)
 #ifdef YAHM_ITSELF
 #include "trapcontrol5_info.c"
 #endif
+////////////////////////////////////////////////////////////////////////////////
+void DumpRuntimeInfo(char *pBuf)
+{
+	UInt32 i;
+	YAHM_runtimeSettings *pSettings = YAHM_GetRuntimeSettingsPtr();
+	ThunkPoolOS5 * pPool;
+	if (pSettings == NULL){
+		StrPrintF(pBuf, "NULL pointer to runtime\n");
+		return;
+
+	}
+	StrPrintF(pBuf, "YAHMLib runtime\n %ld active hacks\n", pSettings->activeHacksCount);
+	pPool = pSettings->pPool;
+	if (pPool == NULL){
+		StrPrintF(pBuf + StrLen(pBuf), "Thunk array memory doesn't allocated\n");
+		return;
+	}
+	StrPrintF(pBuf + StrLen(pBuf), "Pool data: ver %ld, size %ld, curSize %ld, stackBottom %lx, stackPtr %lx\n", pPool->version, pPool->poolSize,
+		pPool->maxCurSize, pPool->stackBottom, pPool->saveStackPtr);
+	StrPrintF(pBuf + StrLen(pBuf), "num, dummy, preCode, hackAddr, postCode, oldHackAddr, R10, \n");
+
+	for(i = 0; i < pPool->poolSize; ++i){
+		char cr[5];
+		if (IS_FREE_THUNK(pPool->thunks + i)){
+			continue;
+		}
+		PrvCopyCreator(cr, pPool->thunks[i].creator);
+
+		StrPrintF(pBuf + StrLen(pBuf), " \x95%ld%s" ", %lx, %lx, %lx\n", 
+			i, 
+			(IS_DUMMY_THUNK(pPool->thunks + i) ? "*" : " "), 
+			&(pPool->thunks[i].hackJumpIns), 
+			pPool->thunks[i].hackCodeAddress,
+			&(pPool->thunks[i].oldJumpIns)
+		);
+
+		StrPrintF(pBuf + StrLen(pBuf), " %lx, %lx, %ld," " %s, [%ld/%ld], %ld\n", 
+			pPool->thunks[i].oldestAddress,
+			pPool->thunks[i].R10_GOT, 
+			pPool->thunks[i].lockCount, 
+			cr, 
+			pPool->thunks[i].syscallInfo.baseTableOffset, 
+			pPool->thunks[i].syscallInfo.offset,
+			pPool->thunks[i].syscallInfo.flags);
+
+	}
+
+}

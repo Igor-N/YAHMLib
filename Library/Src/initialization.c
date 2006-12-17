@@ -16,8 +16,10 @@ typedef struct{
 	UInt32 gotPtr;
 }InitParam;
 ////////////////////////////////////////////////////////////////////////////////
+// pInitializationCode must be locked pointer to start of chunk
 static Err PrvExecuteInitialization(void *pInitializationCode, Boolean init, UInt32 *pRes){
 	Err err = errNone;
+	void *pRelocatedInitializationCode;
 	
 	MemHandle hInitializationStub;
 	NativeFuncType *pInitializationStub;
@@ -32,27 +34,32 @@ static Err PrvExecuteInitialization(void *pInitializationCode, Boolean init, UIn
 	if (pInitializationCode == NULL){
 		return err;
 	}
-
+	// load arm code for calling initialization function from relocated resource
 	hInitializationStub = DmGetResource(HACK_ARM_RES_TYPE, YAHM_INIT_RES_ID);
 	if (hInitializationStub == NULL){
 		err = hackErrNoLibraryArmlet;
 		return err;
 	}
 	pInitializationStub = MemHandleLock(hInitializationStub);
-	
+	// load .got if exist.
 	hUnrelocatedGotSection = DmGetResource(HACK_GOT_RES_TYPE, HACK_CODE_INIT);
 	par->gotPtr = 0;
-	pInitializationCode = YAHM_FixupGccCode(hUnrelocatedGotSection, pInitializationCode, REINTERPRET_CAST(void **, &par->gotPtr));
-	if (pInitializationCode == NULL){
+	pRelocatedInitializationCode = YAHM_FixupGccCode(hUnrelocatedGotSection, pInitializationCode, REINTERPRET_CAST(void **, &par->gotPtr));
+
+	if (pRelocatedInitializationCode == NULL){
 		err = memErrNotEnoughSpace;
 		goto Exit;
 	}
-	par->param = REINTERPRET_CAST(UInt32, pInitializationCode) | (init ? 1 : 0);
+	par->param = REINTERPRET_CAST(UInt32, pRelocatedInitializationCode) | (init ? 1 : 0);
 	par->param = ByteSwap32(par->param);
 	par->gotPtr = ByteSwap32(par->gotPtr);
 	*pRes = PceNativeCall(pInitializationStub, par);
 	
-	YAHM_FreeRelocatedChunk(pInitializationCode);
+	if (pInitializationCode != pRelocatedInitializationCode){
+		//BUGFIX: if YAHM_FixupGccCode does nothing and returns original pointer, 
+		//YAHM_FreeRelocatedChunk does more than it should.
+		YAHM_FreeRelocatedChunk(pRelocatedInitializationCode);
+	}
 	
 Exit:	
 	MemHandleUnlock(hInitializationStub);
