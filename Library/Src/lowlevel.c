@@ -70,8 +70,8 @@ Err YAHM_InstallHack(void){
 				DmReleaseResource(hTrapInfo);
 			}
 			DmReleaseResource(hCode);
-			for(resNo1 = HACK_CODE_RESOURCE_START; resNo1 < resNo; ++resNo){
-				hCode = DmGetResource(HACK_ARM_RES_TYPE, resNo);
+			for(resNo1 = HACK_CODE_RESOURCE_START; resNo1 < resNo; ++resNo1){
+				hCode = DmGetResource(HACK_ARM_RES_TYPE, resNo1);
 				YAHM_UninstallTrap(hCode, crid, resNo1);
 				DmReleaseResource(hCode);
 			}
