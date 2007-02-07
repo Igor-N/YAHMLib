@@ -24,12 +24,17 @@
 #define hackErrBadResultOfGetTrapAddress (hackErrorClass | 7)
 // feature contains wrong value
 #define hackErrBadFeatureValue (hackErrorClass | 8)
+// callback reject patch installation
+#define hackErrPatchInstallWasCanceled (hackErrorClass | 9)
 
+////////////////////////////////////////////////////////////////////////////////
+struct YAHM_SyscallInfo5;
+typedef Err (*PFNCheckTrapinfo)(UInt32 resID, struct YAHM_SyscallInfo5 *pSyscallInfo);
 ////////////////////////////////////////////////////////////////////////////////
 // High level API: consider current app as hack. All resources should be similar to hack resources.
 Err YAHM_InstallHack(void);
+Err YAHM_InstallHack2(PFNCheckTrapinfo pfn);
 Err YAHM_UninstallHack(void);
-
 ////////////////////////////////////////////////////////////////////////////////
 // Middle level API: activate each trap independently
 #define YAHM_FLAG_THUMB	1
@@ -55,6 +60,7 @@ enum {
 	THUNK_MAX_TYPE
 };
 
+
 // execute 'armc' #999 (hack initialization)
 Err YAHM_ExecuteInitialization(void *initCodeResource, Boolean init);
 Err YAHM_ExecuteInitializationEx(MemHandle hInitCode, Boolean init);
@@ -62,6 +68,7 @@ Err YAHM_ExecuteInitializationEx(MemHandle hInitCode, Boolean init);
 // 3 resource handles: arm code, ,got secion (can be NULL) and trap description
 // creator and resId are used for feature set.
 Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId);
+Err YAHM_InstallTrap2(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resId, PFNCheckTrapinfo pfn);
 void YAHM_UninstallTrap(MemHandle hCode, UInt32 creator, UInt16 resID);
 
 Err YAHM_InstallTrapFromMemory(void *pTrapCode, YAHM_SyscallInfo5 *pTrapInfo, void *pPnoletStart, UInt32 creator, UInt16 resId);

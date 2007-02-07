@@ -107,7 +107,7 @@ static void PrvInitThunks(void);
 static JumpThunkOS5 *PrvAllocThunk(ThunkPoolOS5 *pts);
 static JumpThunkOS5 *PrvFindThunkByPrevAddress(ThunkPoolOS5 *pts, void *prevAddress, Boolean isPrev);
 static void PrvSqueezeThunks(ThunkPoolOS5 **pts);
-static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo);
+static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo, UInt16 resId, PFNCheckTrapinfo pfn);
 ////////////////////////////////////////////////////////////////////////////////
 static inline void PrvCopyCreator(char *s, UInt32 crid){
 	MemMove(s, &crid, 4);
@@ -129,14 +129,20 @@ static Err PrvCopyThunk(void *buf, UInt16 id){
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo){
+static Err PrvGetTrapNum(YAHM_SyscallInfo5 *pTrapInfo, MemHandle hTrapInfo, UInt16 resID, PFNCheckTrapinfo pfn){
+	Err err = errNone;
+	YAHM_SyscallInfo5 *psi;
 	if ((hTrapInfo == NULL) || (MemHandleSize(hTrapInfo) < sizeof(YAHM_SyscallInfo5))){
 		MemSet(pTrapInfo, sizeof(YAHM_SyscallInfo5), 0);
 		return hackErrWrongTrapInfo;
 	}
-	*pTrapInfo = *(YAHM_SyscallInfo5 *)MemHandleLock(hTrapInfo);
+	psi = (YAHM_SyscallInfo5 *)MemHandleLock(hTrapInfo);
+	*pTrapInfo = *psi;
+	if (pfn != NULL){
+		err = pfn(resID, psi);
+	}
 	MemHandleUnlock(hTrapInfo);	
-	return errNone;
+	return err;
 }
 ////////////////////////////////////////////////////////////////////////////////
 static inline Boolean IS_FREE_THUNK(JumpThunkOS5 *pThunk){
@@ -338,7 +344,7 @@ static Err PrvInstallTrap(void *pCode, void *pGotPtr, YAHM_SyscallInfo5 *pTrapIn
 	pThunk->hackCodeAddress = ByteSwap32(addr);
 	
 	// set R10. special value for CW
-	pThunk->R10_GOT = ((thunkType == THUNK_CW) ? addr : SwapPtr32(pGotPtr));
+	pThunk->R10_GOT = ((thunkType == THUNK_CW) ? ByteSwap32(addr) : SwapPtr32(pGotPtr));
 	// set lock field
 	pThunk->lockCount = ByteSwap32(1);
 	// set info fields
@@ -371,20 +377,28 @@ Exit:
 	return err;
 }
 ////////////////////////////////////////////////////////////////////////////////
-Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resID){
+Err YAHM_InstallTrap2(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resID, PFNCheckTrapinfo pfn){
 	void *pGotPtr = NULL;
 	void *pFixedHackCode;
 	Err err;
 	YAHM_SyscallInfo5 ci;
 
-	err = PrvGetTrapNum(&ci, hTrapInfo);
+	err = PrvGetTrapNum(&ci, hTrapInfo, resID, pfn);
 	if (err != errNone){
 		return err;
 	}
 	pFixedHackCode = YAHM_FixupGccCodeEx(hGot, hTrapCode, &pGotPtr);
 	//TODO: pGotPtr != NULL - критерий переноса в память
 	//ErrFatalDisplayIf(((pGotPtr != NULL) && (getThunkType(&ci) !=  THUNK_COMMON)), "Wrong thunk type for .got support");
-	return PrvInstallTrap(pFixedHackCode, pGotPtr, &ci, creator, resID);
+	err = PrvInstallTrap(pFixedHackCode, pGotPtr, &ci, creator, resID);
+	if (err != errNone){
+		YAHM_FreeRelocatedChunk(pFixedHackCode);
+	}
+	return err;
+}
+////////////////////////////////////////////////////////////////////////////////
+Err YAHM_InstallTrap(MemHandle hTrapCode, MemHandle hGot, MemHandle hTrapInfo, UInt32 creator, UInt16 resID){
+	return YAHM_InstallTrap2(hTrapCode, hGot, hTrapInfo, creator, resID, NULL);
 }
 ////////////////////////////////////////////////////////////////////////////////
 Err YAHM_InstallTrapFromMemory(void *pCode, YAHM_SyscallInfo5 *pTrapInfo, void *pPnoletStart, UInt32 creator, UInt16 resID){
@@ -407,6 +421,14 @@ static void PrvUninstallTrap(UInt32 creator, UInt16 resID, void **ppRelocatedCod
 	FtrGet(creator, resID, REINTERPRET_CAST(UInt32 *, &pPrevAddress));
 	if (pPrevAddress == NULL){
 		ErrFatalDisplayIf(pPrevAddress == NULL, "Wrong patch uninstall");
+		return;
+	}
+	if (pPrevAddress == REINTERPRET_CAST(void *, -1)){
+		FtrUnregister(creator, resID);
+		// don't unlock resource
+		if (pLockCount){
+			*pLockCount = 2;
+		}
 		return;
 	}
 	pThunk = PrvFindThunkByPrevAddress(pPool, pPrevAddress, true);
